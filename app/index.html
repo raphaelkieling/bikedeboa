@@ -58,7 +58,12 @@
   
 
         <!-- JS --> 
-        <script defer src="/js/lib/jquery.js"></script> 
+        <!-- <script defer src="/js/lib/jquery.js"></script>  -->
+        <script src="/lib/zepto.min.js"></script> 
+        <script>
+          jQuery = Zepto;
+        </script> 
+
         <script defer src="/js/lib/bootstrap.js"></script>
         <script defer src="/js/lib/handlebars.js"></script>
         <script defer src="/js/lib/js.cookie.js"></script>

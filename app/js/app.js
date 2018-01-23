@@ -1,6 +1,5 @@
 /* eslint no-console: ["warn", { allow: ["log", "warn", "error"] }] */
 /* eslint-env node, jquery */
-
 $(() => {
   function openShareDialog() {
     // const shareUrl = window.location.origin + BDB.Places.getMarkerShareUrl(openedMarker);

@@ -1,210 +1,30 @@
-var BIKE = BIKE || {};
+var BDB = BDB || {};
 
-BIKE.Database = {
+BDB.Database = {
   ///////////////////
   // G L O B A L S //
   ///////////////////
 
-  // API path, without the final slash ('/')
-  API_URL: (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'https://bdb-test-api.herokuapp.com' : 'https://bdb-api.herokuapp.com',
-  // API_URL: 'https://bdb-test-api.herokuapp.com',
-  // API_URL: 'http://localhost:3000',
+  // variable replaced by Gulp
+  API_URL: '<DATABASE_URL>', 
+  // API_URL: 'http://localhost:3000', 
   isAuthenticated: false,  
   _authToken: '',
   _headers: {},
   _authenticationAttemptsLeft: 3,
-
+  _isAuthenticated: false,
+ 
   _currentIDToAdd: 1306,
 
 
   ///////////////////
   // M E T H O D S //
   ///////////////////
-
-  _redoLogEntry: (logEntry, cb) => {
-    console.debug('redoing log entry', logEntry);
-
-    const reducedEndpoint = logEntry.endpoint.split('bdb-api.herokuapp.com/')[1]
-
-    BIKE.Database._headers.ip_origin = logEntry.ip_origin;
-
-    if (logEntry.method==='POST' && reducedEndpoint === 'local') {
-      logEntry.body.idLocal = BIKE.Database._currentIDToAdd;
-      if (!logEntry.body.authorIP) {
-        logEntry.body.authorIP = BIKE.Database._currentIDToAdd;
-      }
-    }
-
-    BIKE.Database.customAPICall(logEntry.method, reducedEndpoint, logEntry.body, () => {
-      logEntry.redone = true;
-
-      if (logEntry.method==='POST' && reducedEndpoint === 'local') {
-        BIKE.Database._currentIDToAdd++;
-      }
-
-      if (cb && typeof cb === 'function') {
-        return cb();
-      }
-    });
-  },
-
-  // @todo Improve this to automatically save to a file.
-  _getDatabaseBackupJSON: () => {
-    BIKE.Database.customAPICall('get','local', {}, (data) => {
-      let json = '';
-      let fullMarkers = [];
-
-      if (data && data.length > 0) {
-        fullMarkers = data;
-
-        fullMarkers.forEach( m => {
-          // json += JSON.stringify({
-          //   text: m.text,
-          //   description: m.description,
-          //   address: m.address,
-          //   lat: m.lat,
-          //   lng: m.lng,
-          //   photo: m.photo,
-          // });
-          json += JSON.stringify(m);
-        });
-
-        console.debug('Database backup DONE');
-        console.debug(json);
-      }
-    });
-  },
-
-
-  _fillAllDescriptionsRec: function(index = 0) {
-    const max = markers.length;
-
-    if (index!=markers.length) {
-      let m = markers[index];
-
-      console.warn(`${index} of ${max}`);
-
-      const key = m.lat+m.lng;
-      const desc = window._hashmap[key];
-      if (desc) {
-        console.debug(desc);
-        BIKE.Database.customAPICall('PUT', 'local/'+m.id,
-          {description: desc},
-          () => {this._fillAllDescriptionsRec(index+1);}
-        );
-      } else {
-        this._fillAllDescriptionsRec(index+1);
-      }
-    }
-  },
-
-  _fillAllDescriptions: () => {
-    var allMarkers = BIKE.MockedDatabase.allMarkers;
-    window._hashmap = {};
-    for(let i=0; i<allMarkers.length; i++) {
-      const m = allMarkers[i];
-      const key = m.lat+m.lng;
-
-      if (m.description && m.description.length > 255) {
-        console.error('Description too big for database!');
-        console.error(m);
-        return false;
-      }
-
-      if (window._hashmap[key]) {
-        console.error('same key!');
-        console.error(key + ' : ' + window._hashmap[key]);
-        console.error(m);
-      }
-
-      window._hashmap[key] = m.description;
-    }
-
-    this._fillAllDescriptionsRec();
-  },
-
-  _fillMarkersAddressesOnlyIfMissing() {
-    this.getPlaces(() => {
-      this._fillMarkersAddresses(0, true);
-    }, null, null, true);
-  },
-
-  _fillMarkersAddresses: function(i = 0, onlyIfMissing = false) {
-    const max = markers.length;
-    const MIN_ADDRESS_SIZE = 6;
-
-    if (i!=markers.length) {
-      let m = markers[i];
-
-      console.warn(`${i} of ${max}`);
-
-      if (onlyIfMissing && m.address && m.address.length > MIN_ADDRESS_SIZE) {
-        // console.debug(m.address);
-        this._fillMarkersAddresses(i+1, onlyIfMissing);
-      } else {
-        BIKE.geocodeLatLng(
-          m.lat, m.lng,
-          (address) => {
-            console.debug(m.lat, m.lng, m.id);
-            console.debug(address);
-            this.customAPICall('PUT','local/'+m.id, {address: address}, () => {
-              this._fillMarkersAddresses(i+1, onlyIfMissing);
-            });
-          }, () => {
-            setTimeout(() => {
-              this._fillMarkersAddresses(i, onlyIfMissing);
-            }, 2000);
-          }
-        );
-      }
-    }
-  },
-
-  _removeAll: () => {
-    const self = this;
-
-    console.debug('Removing all entries in 5 seconds...');
-
-    setTimeout(() => {
-      $.ajax({
-        url: self.API_URL + '/local',
-        type: 'DELETE',
-        headers: self._headers,
-      }).done(function(data) {
-        console.debug(data);
-      });
-    }, 5000);
-  },
-
-  _sendAllMarkersToBackend: function(isToMock) {
-    const self = this;
-    let allMarkers = BIKE.MockedDatabase.allMarkers;
-
-    if (isToMock) {
-      allMarkers = BIKE.MockedDatabase.mockData(allMarkers);
-    } else if (isToMock !== false) {
-      console.error('Please specify if you want to mock content or not.');
-      return;
-    }
-
-
-    console.debug('Sending ALL ' + allMarkers.length + ' places.');
-
-    allMarkers.forEach(function(m){
-      $.ajax({
-        type: 'post',
-        headers: self._headers,
-        url: self.API_URL + '/local',
-        data: m
-      });
-    });
-  },
-
   _setOriginHeader: function(ip) {
     this._headers.ip_origin = ip; 
   },
 
-  customAPICall: function(type, endpoint, data, callback, quiet = false) {
+  customAPICall: function(type, endpoint, data, quiet = false) {
     const self = this;
 
     if (!type) {
@@ -214,22 +34,25 @@ BIKE.Database = {
       console.error('no endpoint');
     }
 
-    $.ajax({
-      type: type,
-      headers: self._headers,
-      url: self.API_URL + '/' + endpoint,
-      data: data,
-      success: function(data) {
-        console.debug('_customCall success.');
+    return new Promise((resolve, reject) => {
+      $.ajax({
+        type: type,
+        headers: self._headers,
+        url: self.API_URL + '/' + endpoint,
+        data: data,
+        success: function(data) {
+          console.debug('_customCall success.');
 
-        if (!quiet) {
-          console.debug(data);
-        }
+          if (!quiet) {
+            console.debug(data);
+          }
 
-        if (callback && typeof callback === 'function') {
-          callback(data);
+          resolve(data);
+        },
+        error: function(error) {
+          reject(error)
         }
-      }
+      });
     });
   },
 
@@ -253,104 +76,196 @@ BIKE.Database = {
     });
   },
 
-  _loginPromptCallback(user, isUserLogin, callback) {
-    const self = this;
-    let pw;
+  logoutUser: function() {
+    this.isAuthenticated = false;
+    this._authToken = null;
+    this._headers['x-access-token'] = null;
 
-    if (user && user !== 'client') {
-      pw = 'abcd123';
-    }
+    this.authenticate();
+  },
+
+  authenticate: function(callback) {
+    const self = this;
 
     $.ajax({
       type: 'post',
       headers: self._headers,
       url: self.API_URL + '/token',
       data: {
-        username: user || 'client',
-        password: pw || 'deboanalagoa'
+        username: 'client',
+        password: 'deboanalagoa'
       },
       success: function(data) {
         if (data.token && data.token.length > 0) {
           console.debug('API connected.');
 
-          if (user && user !== 'client') {
-            // This is the only place that should set 'loggedUser'
-            loggedUser = user;
-
-            // Save username in session
-            Cookies.set('bikedeboa_user', loggedUser, { expires: 7 });
-
-            // Clean URL
-            // History.replaceState({}, 'bike de boa', '/');
-
-            ga('set', 'userId', loggedUser);
-            ga('send', 'event', 'Login', 'success', user);
-          } else {
-            loggedUser = null;
-          }
-
-          // Set headers for future calls
+          // Set headers for future calls 
           self.isAuthenticated = true;
           self._authToken = data.token;
           self._headers['x-access-token'] = data.token;
 
           if (callback && typeof callback === 'function') {
-            callback(loggedUser);
+            callback();
           }
         }
       },
       error: function(data) {
-        ga('send', 'event', 'Login', 'fail', user);
+        ga('send', 'event', 'Login', 'client authentication fail');
 
-        BIKE.Database._authenticationAttemptsLeft--;
-        if (BIKE.Database._authenticationAttemptsLeft > 0) {
-          console.error(`Authentication failed, ${BIKE.Database._authenticationAttemptsLeft} attempts left. Trying again in 2s...`);
+        BDB.Database._authenticationAttemptsLeft--;
+        if (BDB.Database._authenticationAttemptsLeft > 0) {
+          console.error(`Authentication failed, ${BDB.Database._authenticationAttemptsLeft} attempts left. Trying again in 2s...`);
           setTimeout( () => {
-            self.authenticate(isUserLogin, callback);
+            self.authenticate(callback);
           }, 2000);
         } else {
           // Permanently failed
-          setOfflineMode();
+          // setOfflineMode();
         }
       }
     });
   },
 
-  authenticate: function(isUserLogin, callback) {
+  getLoggedUserReviews: function() {
     const self = this;
 
-    if (isUserLogin) {
-      // user = prompt('Usuário:','');
-      swal({
-          title: 'Login',
-          text: 'Em breve todos poderão criar um login no Bike de Boa, mas por enquanto este login é apenas para administradores.',
-          input: 'text',
-          showCancelButton: true,
-          inputPlaceholder: "Nome de usuário"
-      }).then((input) => {
-        if (input) {
-          // if (input === '') {
-          //   swal.showInputError();
-          //   return false;
-          // } else {
-            self._loginPromptCallback(input, isUserLogin, callback);
-            return true;
-          // }
-        } else { 
-          return false;
+    return new Promise((resolve, reject) => {
+      $.ajax({
+        type: 'get',
+        headers: self._headers,
+        url: self.API_URL + '/user/reviews',
+        success: function(data) { 
+          let reviews = data.Reviews;
+
+          for(let i=0; i < reviews.length; i++) {
+            reviews[i].placeId = reviews[i].local_id;
+            reviews[i].tags = reviews[i].Tags;
+            reviews[i].databaseId = reviews[i].id;
+          }
+
+          resolve(reviews);
+        },
+        error: function(error) {
+          reject(error);
         }
       });
-    } else {
-      const user = Cookies.get('bikedeboa_user');
-      self._loginPromptCallback(user, isUserLogin, callback);
-    }
+    });
+  },
+
+  getLoggedUserPlaces: function() {
+    const self = this;
+
+    return new Promise((resolve, reject) => {
+      $.ajax({
+        type: 'get',
+        headers: self._headers,
+        url: self.API_URL + '/user/locals',
+        success: function(data) { 
+          let places = data.Locals;
+
+          // for(let i=0; i < places.length; i++) {
+          //   places[i].placeId = places[i].local_id;
+          // }
+
+          resolve(places);
+        },
+        error: function(error) {
+          reject(error);
+        }
+      });
+    });
+  },
+
+  socialLogin: function(loginData) {
+    const self = this;
+
+    return new Promise((resolve, reject) => {
+      $.ajax({
+        type: 'post',
+        headers: self._headers,
+        url: self.API_URL + '/token',
+        data: loginData, 
+        success: function(data) { 
+          if (data.token && data.token.length > 0) {
+            // loggedUser = true;
+
+            ga('send', 'event', 'Login', 'social login success', `${loginData.fullname} @ ${loginData.network}`);
+            if (data.isNewUser) {
+              ga('send', 'event', 'Login', 'new user created', `${loginData.fullname} @ ${loginData.network}`);
+            }
+
+            // Set headers for future calls
+            self.isAuthenticated = true;
+            self._authToken = data.token;
+            self._headers['x-access-token'] = data.token;
+
+            resolve(data);
+          }
+        },
+        error: function(error) {
+          ga('send', 'event', 'Login', 'social login FAIL', `${loginData.fullname} @ ${loginData.network}`);
+
+          reject(error);
+        }
+      });
+    });
+  },
+
+  importUserReviews: function(reviews) {
+    const self = this;
+
+    return new Promise((resolve, reject) => {
+      if (!reviews || !BDB.User.isLoggedIn) {
+        reject();
+      }
+
+      const reviewsIds = reviews.map( r => { return {databaseId: r.databaseId}; });
+ 
+      if (reviews.length > 0) {
+        $.ajax({
+          type: 'post',
+          headers: self._headers,
+          url: self.API_URL + '/user/import-reviews',
+          data: {reviews: reviewsIds}, 
+          success: resolve,
+          error: reject
+        });
+      } else {
+        resolve('No data to import.');
+      }
+    });
+  },
+
+  importUserPlaces: function(places) {
+    const self = this;
+
+    return new Promise((resolve, reject) => {
+      if (!places || !BDB.User.isLoggedIn) {
+        reject();
+      }
+      
+      const placesIds = places.map( p => { return {id: p.id}; } );
+
+      if (places.length > 0) {
+        $.ajax({
+          type: 'post',
+          headers: self._headers,
+          url: self.API_URL + '/user/import-locals',
+          data: {locals: placesIds}, 
+          success: resolve,
+          error: reject
+        });
+      } else {
+        resolve('No data to import.');
+      }
+    });
   },
 
   deleteReview: function(reviewId, callback) {
     const self = this;
 
     if (!reviewId) {
-      console.error('ERROR no review ID to delete.')
+      console.error('ERROR no review ID to delete.');
       return;
     }
 
@@ -359,7 +274,7 @@ BIKE.Database = {
       headers: self._headers,
       url: self.API_URL + '/review/' + reviewId,
       error: function(e) {
-        defaultFailCallback();
+        requestFailHandler();
         console.error(e);
       },
       success: function(data) {
@@ -383,6 +298,8 @@ BIKE.Database = {
       success: function(data) {
         console.debug('Review update successful.');
 
+        BDB.User.fetchReviews();
+
         if (callback && typeof callback === 'function') {
           callback();
         }
@@ -405,6 +322,8 @@ BIKE.Database = {
       success: function(data) {
         console.debug('Review creation successful.');
         console.debug(data);
+
+        BDB.User.fetchReviews();
 
         if (callback && typeof callback === 'function') {
           callback(data.id);
@@ -444,23 +363,41 @@ BIKE.Database = {
     console.debug(place);
 
     $.ajax({
+      xhr: () => this.getUploadProgressHandler(),
       type: 'post',
       headers: self._headers,
       url: self.API_URL + '/local',
       data: place,
-      error: function(e) {
-        defaultFailCallback();
-        console.error(e);
-      },
       success: function(data) {
         console.debug('Addition success!');
         console.debug(data);
 
+        BDB.User.fetchPlaces();
+
         if (callback && typeof callback === 'function') {
           callback(data);
         }
-      }
+      },
+      error: function(e) {
+        requestFailHandler();
+        console.error(e);
+      },
     });
+  },
+
+  getUploadProgressHandler: function() {
+    let xhr = new window.XMLHttpRequest();
+
+    // Upload progress
+    xhr.upload.addEventListener("progress", function (evt) {
+      if (evt.lengthComputable) {
+        const percentComplete = evt.loaded / evt.total;
+        // console.log(percentComplete);
+        updateSpinnerProgress(percentComplete);
+      }
+    }, false);
+
+    return xhr;
   },
 
   updatePlace: function(placeId, place, callback) {
@@ -468,22 +405,25 @@ BIKE.Database = {
 
     console.debug('Updating place:');
     console.debug(place);
-
+ 
     $.ajax({
+      xhr: () => this.getUploadProgressHandler(),
       type: 'put',
       headers: self._headers,
       url: self.API_URL + '/local/' + placeId,
       data: place,
-      error: function(e) {
-        defaultFailCallback();
-        console.error(e);
-      },
       success: function(data) {
         console.debug('Update successful!');
+
+        BDB.User.fetchPlaces();
 
         if (callback && typeof callback === 'function') {
           callback();
         }
+      },
+      error: function(e) {
+        requestFailHandler();
+        console.error(e);
       }
     });
   },
@@ -496,7 +436,7 @@ BIKE.Database = {
       headers: self._headers,
       url: self.API_URL + '/local/' + placeId,
       error: function(e) {
-        defaultFailCallback();
+        requestFailHandler();
         console.error(e);
       },
       success: function(data) {
@@ -522,20 +462,32 @@ BIKE.Database = {
       if (data && data.length > 0) {
         console.debug('Successfully retrieved ' + data.length + ' tags.');
 
-        tags = data;
+        // Alphabetically sort by tag names
+        // @todo temp: filter out 'Coberto' while I haven't deleted this tag from the DB
+        tags = data
+        .filter( tag => tag.name !== 'Coberto' )
+        .sort((a, b) => {
+          var nameA = a.name.toLowerCase(), nameB = b.name.toLowerCase();
+          if (nameA < nameB)
+            return -1;
+          if (nameA > nameB)
+            return 1;
+          return 0;
+        });
 
+        // Update id<->tagname maps
         idToTag = {};
         tagToId = {};
         tags.forEach(tagObj => {
           idToTag[tagObj.id] = tagObj.name;
           tagToId[tagObj.name] = tagObj.id;
         });
-
+        $(document).trigger('tags:loaded');
         if (successCB && typeof successCB === 'function') {
           successCB();
         }
       } else {
-        defaultFailCallback();
+        requestFailHandler();
 
         if (failCB && typeof failCB === 'function') {
           failCB();
@@ -543,7 +495,7 @@ BIKE.Database = {
       }
     })
     .fail(() => {
-      defaultFailCallback();
+      requestFailHandler();
 
       if (failCB && typeof failCB === 'function') {
         failCB();
@@ -563,14 +515,27 @@ BIKE.Database = {
 
     $.ajax({
       type: 'get',
-      headers: self._headers,
+      headers: self._headers, 
       url: self.API_URL + '/local/' + (getFullData ? '' : 'light'),
+      // xhr: function () {
+      //   var xhr = new window.XMLHttpRequest();
+      //   // Download progress
+      //   xhr.addEventListener("progress", function (evt) {
+      //     console.log('download progress');
+      //     if (evt.lengthComputable) {
+      //       var percentComplete = evt.loaded / evt.total;
+      //       //Do something with download progress
+      //       console.log(percentComplete);
+      //     }
+      //   }, false);
+      //   return xhr;
+      // },
     }).done(function(data) {
       console.debug('Retrieved ' + data.length + ' locations from API.');
 
       markers = data;
 
-      BIKE.saveMarkersToLocalStorage(markers);
+      BDB.saveMarkersToLocalStorage(markers);
 
       for(let i=0; i < markers.length; i++) {
         const m = markers[i];
@@ -581,14 +546,14 @@ BIKE.Database = {
         if (typeof m.average === 'string') {
           m.average = parseFloat(m.average);
         }
-      };
+      }
 
       if (successCB && typeof successCB === 'function') {
         successCB(markers);
       }
     })
     .fail(() => {
-      defaultFailCallback();
+      requestFailHandler();
 
       if (failCB && typeof failCB === 'function') {
         failCB();
@@ -610,50 +575,43 @@ BIKE.Database = {
     }
   },
 
-  getPlaceDetails: function(placeId, successCB, failCB, alwaysCB) {
+  getPlaceDetails: function(placeId) {
     const self = this;
 
     console.debug('Getting place detail...');
+ 
+    return new Promise((resolve, reject) => {
+      function justDoIt() {
+        $.ajax({
+          type: 'get',
+          headers: self._headers,
+          url: self.API_URL + '/local/' + placeId
+        }).done(function (data) {
+          if (data) {
+            console.debug('Got place detail:');
+            console.debug(data);
 
-    function justDoIt() { 
-      $.ajax({
-        type: 'get', 
-        headers: self._headers,
-        url: self.API_URL + '/local/' + placeId
-      }).done(function(data) {
-        if (data) {
-          console.debug('Got place detail:');
-          console.debug(data);
+            // Combine detailed data with what we had
+            let updatedMarker = markers.find(m => { return m.id === placeId; });
+            Object.assign(updatedMarker, data);
 
-          // Combine detailed data with what we had
-          let updatedMarker = markers.find(m => {return m.id === placeId; });
-          Object.assign(updatedMarker, data);
+            // Set flag
+            updatedMarker._hasDetails = true;
 
-          // Set flag
-          updatedMarker._hasDetails = true;
+            // Update offline-stored markers with new state
+            BDB.saveMarkersToLocalStorage(markers);
 
-          // Update offline-stored markers with new state
-          BIKE.saveMarkersToLocalStorage(markers);
-
-          if (successCB && typeof successCB === 'function') {
-            successCB();
+            resolve(updatedMarker);
           }
-        }
-      })
-      .fail(() => {
-        defaultFailCallback();
+        })
+        .fail(() => {
+          requestFailHandler();
 
-        if (failCB && typeof failCB === 'function') {
-          failCB();
-        }
-      })
-      .always(() => {
-        if (alwaysCB && typeof alwaysCB === 'function') {
-          alwaysCB();
-        }
-      });
-    }
+          reject();
+        })
+      }
 
-    this.waitAuthentication(justDoIt); 
+      this.waitAuthentication(justDoIt);
+    });
   },
 };

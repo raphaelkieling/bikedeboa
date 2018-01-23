@@ -1,57 +1,69 @@
-var BIKE = BIKE || {};
+var BDB = BDB || {};
 
-BIKE.getMarkersFromLocalStorage = () => {
+BDB.getMarkersFromLocalStorage = () => {
   return JSON.parse( localStorage.getItem('markers') );
 };
 
-BIKE.saveMarkersToLocalStorage = markersToSave => {
+BDB.saveMarkersToLocalStorage = markersToSave => {
   localStorage.setItem( 'markers', JSON.stringify(markersToSave) );
 };
 
-BIKE.getURLParameter = function(name) {
+BDB.getURLParameter = function(name) {
   return decodeURIComponent((new RegExp('[?|&]' + name + '=' + '([^&;]+?)(&|#|;|$)').exec(location.search) || [null, ''])[1].replace(/\+/g, '%20')) || null;
 };
 
-BIKE.geocodeLatLng = function(lat, lng, successCB, failCB) {
-  const latlng = {lat: parseFloat(lat), lng: parseFloat(lng)};
+window.createdAtToDaysAgo = createdAtStr => {
+  const createdAtDate = Date.parse(createdAtStr);
+  const msAgo = Date.now() - createdAtDate;
 
-  geocoder.geocode({'location': latlng}, function(results, status) {
-    if (status === google.maps.GeocoderStatus.OK) {
-      // console.log('geocoding results', results);
-      
-      if (results[0]) {
-        if (successCB && typeof successCB === 'function') {
-          successCB(results[0].formatted_address);
-        }
-      } else {
-        console.error('No results found');
-      }
-    } else {
-      console.error('Geocoder failed due to: ' + status);
-      if (failCB && typeof failCB === 'function') {
-        failCB();
-      }
-    }
-  });
+  const monthsAgo = Math.floor(msAgo/(1000*60*60*24*30));
+  if (monthsAgo) {
+    return `${monthsAgo} ${monthsAgo > 1 ? 'meses' : 'mês'} atrás`;
+  }
+  
+  const daysAgo = Math.floor(msAgo/(1000*60*60*24));
+  if (daysAgo) {
+    return `${daysAgo} dia${daysAgo > 1 ? 's' : ''} atrás`;
+  }
+
+  const hoursAgo = Math.floor(msAgo/(1000*60*60));
+  if (hoursAgo) {
+    return `${hoursAgo} hora${hoursAgo > 1 ? 's' : ''} atrás`;
+  }
+
+  const minsAgo = Math.floor(msAgo/(1000*60));
+  if (minsAgo) {
+    return `${minsAgo} minuto${minsAgo > 1 ? 's' : ''} atrás`;
+  }
+
+  return 'agora há pouco';
 };
 
 window.toggleSpinner = () => {
   $('#spinnerOverlay').fadeToggle();
 };
 
-window.showSpinner = function (label, callback) {
-  console.log('showspinner');
+window.showSpinner = function (label, showProgress) {
+  console.debug('show spinner');
+
+  $('#globalProgressBar').toggle(!!showProgress);
+  if (showProgress) {
+    updateSpinnerProgress(0);
+  }
+
   if (label) {
     $('#globalSpinnerLabel').html(label);
   }
-  $('#spinnerOverlay').velocity('transition.fadeIn', {complete: () => {
-    if (callback && typeof callback === 'function') {
-      callback();
-    }
+  $('#spinnerOverlay:hidden').velocity('transition.fadeIn', {complete: () => {
+    // if (callback && typeof callback === 'function') {
+    //   callback();
+    // }
   }});
 };
 
 window.hideSpinner = callback => {
+  console.debug('hide spinner');
+
   $('#spinnerOverlay').velocity('transition.fadeOut', {duration: 400, complete: () => {
     $('#globalSpinnerLabel').html('');
 
@@ -61,8 +73,13 @@ window.hideSpinner = callback => {
   }});
 };
 
-window.defaultFailCallback = () => {
+window.updateSpinnerProgress = (percentComplete) => {
+  $('#globalProgressBar').attr('value', percentComplete*100);
+}
+
+window.requestFailHandler = () => {
   hideSpinner();
+  toastr['warning']('Ops, algo deu errado :(');
   // swal('Ops', 'Algo deu errado. :/', 'error');
 },
 
@@ -165,13 +182,25 @@ window.setOfflineMode = () => {
       });
     })
 
-    $('#offline-overlay').velocity('transition.fadeIn', {delay: 300, queue: false, display: 'flex'})
+    $('#offline-overlay').addClass('showThis'); 
   }
 
 }
 
+window.formatAverage = function(avg) {
+  if (avg) {
+    avg = parseFloat(avg);
+    if (avg.toFixed && avg !== Math.round(avg)) {
+      avg = avg.toFixed(1);
+    }
+    avg = '' + avg;
+  }
+
+  return avg;
+}
+
 // https://stackoverflow.com/questions/22581345/click-button-copy-to-clipboard-using-jquery
-function copyToClipboard(elem) { 
+window.copyToClipboard = function(elem) {
     // create hidden text element, if it doesn't already exist
     var targetId = "_hiddenCopyText_";
     var isInput = elem.tagName === "INPUT" || elem.tagName === "TEXTAREA";
@@ -220,3 +249,102 @@ function copyToClipboard(elem) {
     }
     return succeed;
 }
+
+window.getColorFromAverage = function(average) {
+  if (typeof average === 'string') {
+    average = parseFloat(average);
+  }
+
+  let color;
+ 
+  if (average) {
+    if (!average || average === 0) {
+      color = 'gray';
+    } else if (average > 0 && average <= 2) {
+      color = 'red';
+    } else if (average > 2 && average < 3.5) {
+      color = 'yellow';
+    } else if (average >= 3.5) {
+      color = 'green';
+    } else {
+      color = 'gray';
+    }
+  } else {
+    color = 'gray';
+  }
+
+  return color;
+}
+
+
+// Service Worker
+window.swUpdateAvailableCallback = function() {
+  // At this point, the old content will have been purged and the fresh content will
+  // have been added to the cache.
+  // It's the perfect time to display a "New content is available; please refresh."
+  // message in the page's interface.
+ 
+  if (BDB_ENV === 'beta' || BDB_ENV === 'localhost') {
+    $('.hamburger-button, #logo').css({ filter: 'grayscale(100%)' });
+  }  
+} 
+
+window.swCachedCallback = function() {
+  // At this point, everything has been precached.
+  // It's the perfect time to display a "Content is cached for offline use." message.
+
+  // toastr['success']('A partir de agora você pode explorar os bicicletários mesmo sem Internet.', 'Webapp salvo offline');
+}
+
+
+// Confettiful
+// Production ready confetti generator, yo. By Jacob Gunnarsson.
+// https://codepen.io/jacobgunnarsson/pen/pbPwga
+const Confettiful = function(el) {
+  this.el = el;
+  this.containerEl = null;
+  
+  this.confettiFrequency = 4;
+  this.confettiColors = ['#30bb6a', '#F6C913', '#FF8265', '#533FB4'];
+  this.confettiAnimations = ['slow', 'medium', 'fast'];
+  
+  this._init();
+  this._start();
+};
+
+Confettiful.prototype._init = function() {
+  const containerEl = document.createElement('div');
+  const elPosition = this.el.style.position;
+  
+  // if (elPosition !== 'relative' || elPosition !== 'absolute') {
+  //   this.el.style.position = 'relative';
+  // }
+  
+  containerEl.classList.add('confetti-container');
+  
+  this.el.appendChild(containerEl);
+  
+  this.containerEl = containerEl;
+};
+
+Confettiful.prototype._start = function() {
+  this.confettiInterval = setInterval(() => {
+    const confettiEl = document.createElement('div');
+    const confettiSize = (Math.floor(Math.random() * 3) + 7) + 'px';
+    const confettiBackground = this.confettiColors[Math.floor(Math.random() * this.confettiColors.length)];
+    const confettiLeft = (Math.floor(Math.random() * this.el.offsetWidth)) + 'px';
+    const confettiAnimation = this.confettiAnimations[Math.floor(Math.random() * this.confettiAnimations.length)];
+    
+    confettiEl.classList.add('confetti', 'confetti--animation-' + confettiAnimation);
+    confettiEl.style.left = confettiLeft;
+    confettiEl.style.width = confettiSize;
+    confettiEl.style.height = confettiSize;
+    confettiEl.style.backgroundColor = confettiBackground;
+    
+    confettiEl.removeTimeout = setTimeout(function() {
+      confettiEl.parentNode.removeChild(confettiEl);
+    }, 3000);
+    
+    this.containerEl.appendChild(confettiEl);
+  }, 25);
+};

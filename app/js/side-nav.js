@@ -19,17 +19,15 @@ class SideNav {
   constructor (id, options) {
     this.id = id;
 
-    this.showButtonEl = document.querySelector(`.js-menu-show-${id}`);
+    // this.showButtonEls = document.querySelectorAll(`.js-menu-show-${id}`);
     this.hideButtonEl = document.querySelector(`#${id} .js-menu-hide`);
     this.sideNavEl = document.querySelector(`#${id}`);
     this.sideNavContainerEl = document.querySelector(`#${id} .js-side-nav-container`);
     
-    if (!this.showButtonEl ||
-        !this.hideButtonEl ||
+    if (!this.hideButtonEl ||
         !this.sideNavEl ||
         !this.sideNavContainerEl) {
-      console.error('Something went wrong when initializing sidenav ' + id);
-      return;
+      throw Error('Something went wrong when initializing sidenav ' + id);
     }
 
     // Control whether the container's children can be focused
@@ -74,7 +72,7 @@ class SideNav {
   }
 
   addEventListeners () {
-    this.showButtonEl.addEventListener('click', this.show);
+    // this.showButtonEls.forEach( i => i.addEventListener('click', this.show) );
     this.hideButtonEl.addEventListener('click', this._hide);
     if (!this.options.fixed) {
       this.sideNavEl.addEventListener('click', this._hide);
@@ -187,8 +185,10 @@ class SideNav {
   }
 
   hide () {
-    this.sideNavEl.classList.add('side-nav--animatable');
-    this.sideNavEl.classList.remove('side-nav--visible');
-    this.sideNavEl.addEventListener('transitionend', this.onTransitionEnd);
+    if (this.sideNavEl.classList.contains('side-nav--visible')) {
+      this.sideNavEl.classList.add('side-nav--animatable');
+      this.sideNavEl.classList.remove('side-nav--visible');
+      this.sideNavEl.addEventListener('transitionend', this.onTransitionEnd);
+    }
   }
 }

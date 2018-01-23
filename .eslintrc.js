@@ -32,6 +32,7 @@ module.exports = {
         "UpUp": false,
         "swal": false,
         "twttr": true,
+        "toastr": true,
         "ga": true, //overriden on localhost
 
         // Constants
@@ -69,9 +70,8 @@ module.exports = {
         "copyToClipboard": true,
 
         // Global variables
-        "BIKE": true,
+        "BDB": true,
         "SideNav": true,
-        "isDemoMode": true,
         "Database": true,
         "map": true,
         "geocoder": true,
@@ -92,11 +92,8 @@ module.exports = {
         "_geolocationMarker": true,
         "_positionWatcher": true,
         "_geolocationRadius": true,
-        "_mapBounds": true,
-        "_mapBoundsCoords": true,
         "_sidenav": true,
         "_updatingReview": true,
-        "_userIP": true,
         "_mapZoomLevel": true,
         "_isLocalhost": true,
         "_isFacebookBrowser": true,

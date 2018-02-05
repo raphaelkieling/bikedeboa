@@ -138,51 +138,53 @@ BDB.Geolocation = (function(){
       }
 
     },
-    reverseGeocode : function(lat, lng, successCB, failCB) {
-      const latlng = {lat: parseFloat(lat), lng: parseFloat(lng)};
+    reverseGeocode : function(lat, lng) {
+      return new Promise(function (resolve, reject) {
+        const latlng = {lat: parseFloat(lat), lng: parseFloat(lng)};
 
-      geocoder.geocode({'location': latlng}, function(results, status) {
-        if (status === google.maps.GeocoderStatus.OK) {
-          if (results[0]) {
-            const r = results[0].address_components;
-            const address = `${r[1].short_name}, ${r[0].short_name} - ${r[3].short_name}`
-            if (successCB && typeof successCB === 'function') {
-              successCB(address);
+        geocoder.geocode({'location': latlng}, function(results, status) {
+          if (status === google.maps.GeocoderStatus.OK) {
+            if (results[0]) {
+              const r = results[0].address_components;
+              const formattedAddress = `${r[1].short_name}, ${r[0].short_name} - ${r[3].short_name}`
+              let city, state, country;
+
+              r.forEach(address => {
+                address.types.forEach(type => {
+                  if (type === 'locality' || type === 'administrative_area_level_2') {
+                    if (city && city != address.long_name) {
+                      console.warn('reverseGeocode: conflicting city names:', city, address.long_name);
+                    }  
+                    city = address.long_name;
+                  } else if (type === "administrative_area_level_1") {
+                    if (state && state != address.long_name) {
+                      console.warn('reverseGeocode: conflicting state names:', state, address.long_name);
+                    }
+                    state = address.long_name;
+                  } else if (type === "country") {
+                    if (country && country != address.long_name) {
+                      console.warn('reverseGeocode: conflicting country names:', country, address.long_name);
+                    }
+                    country = address.long_name;
+                  }
+                })
+              });
+
+              resolve({
+                address: formattedAddress,
+                city: city,
+                state: state,
+                country: country
+              });
+            } else {
+              console.error('No results found');
+              reject();
             }
-
-            // var city, state, country;
-
-            // console.debug(results[0]);
-
-            // results[0].address_components.forEach(address => {
-            //   address.types.forEach(type => {
-            //     if (type === 'locality' || type === 'administrative_area_level_2') {
-            //       if (city && city != address.long_name) {
-            //         console.error('Conflicting city names:', city, address.long_name);
-            //       }
-            //       city = address.long_name;
-            //     } else if (type === "administrative_area_level_1") {
-            //       if (state && state != address.long_name) {
-            //         console.error('Conflicting state names:', state, address.long_name);
-            //       }
-            //       state = address.long_name;
-            //     } else if (type === "country") {
-            //       if (country && country != address.long_name) {
-            //         console.error('Conflicting country names:', country, address.long_name);
-            //       }
-            //       country = address.long_name;
-            //     }
-            //   })
-            // });
           } else {
-            console.error('No results found');
+            console.error('Geocoder failed due to: ' + status);
+            reject();
           }
-        } else {
-          console.error('Geocoder failed due to: ' + status);
-          if (failCB && typeof failCB === 'function') {
-            failCB();
-          }
-        }
+        });
       });
     }
   }

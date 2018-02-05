@@ -479,7 +479,7 @@
           <!-- Importador de dados -->
 
           <div role="tabpanel" class="tab-pane fade" id="importador" class="restricted-access">
-            <p>
+            <p style="margin-top: 2em;">
               <input id="kmlFileInput" type="file" name="kmlFileInput" accept=".kml" />
             </p>
             
@@ -499,8 +499,12 @@
               data-sticky-header="true">
             </table>
 
-            <p>
-              <button id="kmlFileImport" class="btn btn-action green" disabled>Importar</button>
+            <hr>
+
+            <p style="margin-top: 2em;"> 
+              <button id="kmlFileImport" class="btn btn-action green" disabled>
+                <i class="fa fa-cloud-upload"></i> Importar 
+              </button>
             </p>
           </div>
         </div>
@@ -1292,7 +1296,7 @@
                     field: 'text', title: 'Nome', sortable: true, class: 'col-title', editable: !!BDB.User.isAdmin
                   },
                   {
-                    field: 'address', title: 'Endereço', sortable: true, class: 'col-address', editable: !!BDB.User.isAdmin, 'editable-type': 'textarea'
+                    field: 'address', title: 'Endereço', sortable: true, class: 'col-address', editable: !!BDB.User.isAdmin, 'editable-type': 'textarea', visible: false,
                   },
                   {
                     field: 'lat', title: 'lat', sortable: true, visible: false,
@@ -1316,7 +1320,7 @@
                     field: 'isPaid', title: 'Pago?', sortable: true, editable: !!BDB.User.isAdmin
                   },
                   { 
-                    field: 'description', title: 'Descrição', sortable: true, class: 'col-description', editable: !!BDB.User.isAdmin, 'editable-type': 'textarea', visible: false
+                    field: 'description', title: 'Descrição', sortable: true, class: 'col-description', editable: !!BDB.User.isAdmin, 'editable-type': 'textarea',
                   },
                   {
                     field: 'photo', title: 'Foto', sortable: true, visible: !!BDB.User.isAdmin
@@ -1342,34 +1346,36 @@
         function uploadImportedPlacesToBackend() {
           return new Promise((resolve, reject) => {
             function importRecursive(i = 0) {
-              const max = markers.length;
+              const max = _importedPlaces.length;
   
-              if (i != markers.length) {
-                let m = markers[i]; 
+              if (i != _importedPlaces.length) {
+                let m = _importedPlaces[i]; 
   
                 updateSpinnerProgress(i/max);
                 $('#globalSpinnerLabel').text(`${i}/${max}`);
-                
                 console.warn(`${i} of ${max}`);
   
-                BDB.Geolocation.reverseGeocode(
-                  m.lat, m.lng,
-                  (address) => {
+                // @todo it's always getting the address, despite having it already
+                BDB.Geolocation.reverseGeocode(m.lat, m.lng)
+                  .then( (addressObj) => {
                     console.debug(m.lat, m.lng, m.id);
-                    console.debug(address);
+                    console.debug(addressObj);
   
-                    m.address = address;
+                    m.address = addressObj.address;
+                    m.city = addressObj.city;
+                    m.state = addressObj.state;
+                    m.country = addressObj.country;
   
-                    // BDB.Database.customAPICall('POST', 'local', m, () => {
-                      importRecursive(i + 1);
-                    // });
-                  }, () => {
+                    BDB.Database.customAPICall('POST', 'local', m, () => {
+                      // importRecursive(i + 1);
+                    });
+                  })
+                  .catch( () => {
                     // Google Maps quota limits the frequency of calls of the service
                     setTimeout(() => {
                       importRecursive(i);
                     }, 2000); 
-                  }
-                );
+                  });
               } else {
                 resolve();
               }

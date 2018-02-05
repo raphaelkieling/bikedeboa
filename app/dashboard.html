@@ -308,11 +308,11 @@
               Bicicletários
             </a>
           </li>
-          <li role="presentation" class="restricted-access">
+          <li role="presentation">
             <a href="#reviews" aria-controls="reviews" role="tab" data-toggle="tab">
               <!-- <i class="fa fa-users"></i> -->
               Avaliações
-            </a>
+            </a> 
           </li>
           <li role="presentation" class="restricted-access">
             <a href="#users" aria-controls="users" role="tab" data-toggle="tab">
@@ -332,7 +332,7 @@
               Log
             </a>
           </li>
-          <li role="presentation" class="restricted-access" class="active">
+          <li role="presentation" class="restricted-access">
             <a href="#importador" aria-controls="importador" role="tab" data-toggle="tab">
               <!-- <i class="fa fa-list"></i> -->
               Importador de KML
@@ -473,9 +473,9 @@
           
           <!-- Importador de dados -->
 
-          <div role="tabpanel" class="tab-pane fade in active" id="importador" class="restricted-access">
+          <div role="tabpanel" class="tab-pane fade" id="importador" class="restricted-access">
             <p>
-              <input id="kmlFileInput" type="file" name="kmlFileInput" accept="*" />
+              <input id="kmlFileInput" type="file" name="kmlFileInput" accept=".kml" />
             </p>
             
             <table
@@ -700,7 +700,7 @@
                   field: 'lng', title: 'lng', sortable: true, visible: false,
                 },
                 {
-                  field: 'isPublic', title: 'Público?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': '1', 'text': 'Publico'}, {'value': '0', 'text': 'Exclusivo'} ]",
+                  field: 'isPublic', title: 'Público?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': '1', 'text': 'Publico'}, {'value': '0', 'text': 'Privado'} ]",
                 },
                 {
                   field: 'isCovered', title: 'Coberto?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': '1', 'text': 'Coberto'}, {'value': '0', 'text': 'Não coberto'} ]",
@@ -985,6 +985,32 @@
           document.location.reload();
         });
 
+        function extractFromCDATA(str) {
+          console.log(str);
+
+          let ret;
+
+          // Extract CDATA content
+          // Example: <![CDATA[Garimpo da Mary Arte & Decoração]]>
+          //   regex capture group 1: Garimpo da Mary Arte & Decoração
+          const regex = /^<!\[CDATA\[(.*?)\]\]>/s;
+          const result = regex.exec(str);
+          if (result && result[1]) {
+            ret = result[1];
+          } else {
+            // console.error('ERROR on extractFromCDATA: regex failed');
+            ret = str;
+          }
+
+          console.log(ret);
+
+          return ret;
+        }
+
+        function removeHTML(str) {
+          return str.replace(/<[^>]*>/gs, "");
+        }
+
         $('#kmlFileInput').on('change', () => {
             var file = document.getElementById("kmlFileInput").files[0];
             if (file) {
@@ -1002,7 +1028,15 @@
                 let data = [];
                 let tags = [...xmlDoc.getElementsByTagName("Placemark")];
                 tags.forEach(p => {
-                  let tmp = {};
+                  let tmp = {
+                    'isCovered': null,
+                    'hasFee': null,
+                    'isPublic': null,
+                    'address': null,
+                    'structureType': null,
+                    'slots': null,
+                    'isPaid': null
+                  }; 
 
                   let regex, result;
 
@@ -1012,16 +1046,27 @@
                       case 'name':
                         tmp.text = c.innerHTML;
 
-                        // Transporte Ativo: remove special code in front of all names
-                        regex = /^BC[\d]*\s\-\s/;
-                        result = regex.exec(tmp.text);
-                        if (result && result[0]) {
-                          tmp.taCode = result[0];
-                          tmp.text = tmp.text.split(result[0])[1]; 
+                        if (tmp.text.toLowerCase().indexOf('bikerio') > 0) {
+                          //break;
+                          console.log('BIKERIO!!!',tmp.text);
                         }
-                        break;
+
+                        // Transporte Ativo: remove special code in front of all names
+                        // Example: BC0137 - Bicicletário Lagoon
+                        //   regex capture group 1: BC0137
+                        //   regex capture group 2: Bicicletário Lagoon 
+                        regex = /^(BC[\d]*)\s\-\s(.*)/s;
+                        result = regex.exec(tmp.text);
+                        if (result && result[0] && result[1]) {
+                          tmp.taCode = result[1];
+                          tmp.text = result[2];
+                        }
+
+                        tmp.text = extractFromCDATA(tmp.text);
                       case 'description':
                         tmp.description = c.innerHTML;
+                        tmp.description = extractFromCDATA(tmp.description);
+                        tmp.description = removeHTML(tmp.description);
 
                         /////////////////
                         // Magic stuff //
@@ -1034,7 +1079,7 @@
                         }
 
                         // 'X vagas'
-                        regex = /(\d*)\svaga/;
+                        regex = /(\d*)\svaga/s;
                         result = regex.exec(str);
                         if (result && result[1]) {
                           tmp.slots = result[1];
@@ -1042,34 +1087,63 @@
 
                         // Coberto?
                         if (str.indexOf('descoberto') > 0
+                          || str.indexOf('descoberta') > 0
                           || str.indexOf('sem cobertura') > 0
                           || str.indexOf('não coberto') > 0
+                          || str.indexOf('não coberta') > 0
+                          || str.indexOf('nao coberta') > 0
+                          || str.indexOf('nao é coberta') > 0
+                          || str.indexOf('nao e coberta') > 0
                           || str.indexOf('não é coberto') > 0
-                          || str.indexOf('não eh coberto') > 0
-                          || str.indexOf('nao eh coberto') > 0
                           || str.indexOf('nao e coberto') > 0
                           || str.indexOf('nao é coberto') > 0
-                          || str.indexOf('ar livre') > 0 || str.indexOf('céu aberto') > 0) {
+                          || str.indexOf('ar livre') > 0
+                          || str.indexOf('céu aberto') > 0
+                          || str.indexOf('ceu aberto') > 0) {
                           tmp.isCovered = false;
-                        } else if (str.indexOf('coberto') > 0) {
+                        } else if (str.indexOf('coberto') > 0
+                          || str.indexOf('coberta') > 0
+                          || str.indexOf('subsolo') > 0
+                          || str.indexOf('subterrânea') > 0
+                          || str.indexOf('subterranea') > 0
+                          || str.indexOf('subterraneo') > 0
+                          || str.indexOf('subterrâneo') > 0) {
                           tmp.isCovered = true;
                         }
  
                         // Gratuito?
                         if (str.indexOf('gratuito') > 0) {
-                          tmp.hasFee = false;
-                        } else if (str.indexOf('pago') > 0) {
-                          tmp.hasFee = true;
+                          tmp.isPaid = false;
+                        } else if (str.indexOf('pago') > 0 
+                          || str.indexOf('custa') > 0) {
+                          tmp.isPaid = true;
+                          tmp.isPublic = false;
                         }
- 
+
+                        // Público?
                         if (str.indexOf('privado') > 0
-                          || str.indexOf('dentro') > 0) { 
+                          || str.indexOf('funcionários') > 0
+                          || str.indexOf('moradores') > 0
+                          || str.indexOf('sócios') > 0
+                          || str.indexOf('restrito para') > 0
+                          || str.indexOf('exclusivo para') > 0
+                          || str.indexOf('apenas para') > 0) {
                           tmp.isPublic = false;
                         } else if (str.indexOf('publico') > 0
                           || str.indexOf('público') > 0
+                          || str.indexOf('na rua') > 0
                           || str.indexOf('calçada') > 0) {
                           tmp.isPublic = true;
-                        }
+                        } 
+
+                        // Tipo de bicicletário
+                        // ['uinvertido', 'deroda', 'trave', 'suspenso', 'grade', 'other'];
+                        if (str.indexOf('u invertido') > 0
+                          || str.indexOf('suporte em u') > 0) {
+                          tmp.structureType = 'uinvertido';
+                        } else if (str.indexOf('açougue') > 0) {
+                          tmp.structureType = 'suspenso';
+                        } 
 
                         // tmp.structureType = /^tipo\s([\w])/
                         break;
@@ -1078,22 +1152,65 @@
                       case 'ExtendedData':
                         const extData = [...c.children]; 
                         extData.forEach(ext => {
-                          switch (ext.tagName) {
+                          if (!ext.attributes[0] || !ext.children[0] || !ext.children[0].innerHTML) {
+                            return;
+                          }
+                          
+                          const name = ext.attributes[0].nodeValue;
+                          const value = ext.children[0].innerHTML.toLowerCase();
+
+                          switch (name) {
                             case 'gx_media_links':
-                              tmp.photo = ext.innerHTML;
+                              tmp.photo = value;
                               break; 
                             
                             //////////////////////////////////////////////////
                             // Transporte Ativo Fusion Maps specific field //
                             //////////////////////////////////////////////////
                             case 'BC_slots':
-                              tmp.slots = ext.innerHTML;
+                              tmp.slots = value;
                               break;
                             case 'BC_covered':
-                              tmp.isCovered = ext.innerHTML;
+                              if (tmp.isCovered === 'yes')   {
+                                tmp.isCovered = true;
+                              } else if (tmp.isCovered === 'no') {
+                                tmp.isCovered = false; 
+                              }
+                              break;
+                              break;
+                            case 'BC_type':
+                              // ['uinvertido', 'deroda', 'trave', 'suspenso', 'grade', 'other'];
+                              switch(value) { 
+                                case 'açougue': 
+                                case 'metrôrio':
+                                  tmp.structureType = 'suspenso';
+                                  break;
+                                case 'grelha':
+                                case 'holandês':
+                                case 'jujubinha':
+                                case 'de roda':  
+                                case 'trincheira':  
+                                  tmp.structureType = 'deroda';
+                                  break;
+                                case 'pente':
+                                case 'sulamerica':
+                                case 'pescocinho':
+                                case 'transcarioca':
+                                case 'm': 
+                                  tmp.structureType = 'other';
+                                  break;
+                                case 'u invertido':
+                                case 'u invertido quiosque':
+                                case 'r': 
+                                  tmp.structureType = 'uinvertido';
+                                  break;
+                                default:
+                                  console.warn('tipo nao identificado:', value);
+                                  break;
+                              }
                               break;
                             case 'BC_paid':
-                              tmp.isPaid = ext.innerHTML;
+                              tmp.isPaid = value;
                               break;
 
                             ///////////// 
@@ -1101,7 +1218,7 @@
                             /////////////
                             default:
                               // Any other tag that we haven't identified yet
-                              tmp[ext.tagName] = ext.innerHTML;
+                              tmp[name] = value;
                           } 
                         });
                       case 'Point':
@@ -1152,18 +1269,18 @@
                       field: 'slots', title: 'Vagas', sortable: true, 
                     },
                     {
-                      // field: 'isPublic', title: 'Público?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': '1', 'text': 'Publico'}, {'value': '0', 'text': 'Exclusivo'} ]",
-                      field: 'isPublic', title: 'Público?', sortable: true, editable: !!BDB.User.isAdmin 
+                      field: 'isPublic', title: 'Público?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': true, 'text': 'Publico'}, {'value': false, 'text': 'Privado'} ]",
                     },
                     {
-                      // field: 'isCovered', title: 'Coberto?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': '1', 'text': 'Coberto'}, {'value': '0', 'text': 'Não coberto'} ]",
-                      field: 'isCovered', title: 'Coberto?', sortable: true, editable: !!BDB.User.isAdmin
+                      field: 'isCovered', title: 'Coberto?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': true, 'text': 'Coberto'}, {'value': false, 'text': 'Não coberto'} ]",
                     },
                     {
-                      // field: 'structureType', title: 'Tipo', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': JSON.stringify(structureTypes).replace(/\"/g, '\'')
                       field: 'structureType', title: 'Tipo', sortable: true, editable: !!BDB.User.isAdmin
                     },
                     {
+                      field: 'isPaid', title: 'Pago?', sortable: true, editable: !!BDB.User.isAdmin
+                    },
+                    { 
                       field: 'description', title: 'Descrição', sortable: true, class: 'col-description', editable: !!BDB.User.isAdmin, 'editable-type': 'textarea', visible: false
                     },
                     {
@@ -1210,6 +1327,9 @@
         $('a[data-toggle="tab"]').on('shown.bs.tab', e => {
           const tabName = e.target.getAttribute('aria-controls');
           switch (tabName) {
+          case 'locals':
+            updateLocalsTable();
+            break;
           case 'revisions':
             updateRevisionTable();
             break;

@@ -102,7 +102,7 @@
 
           h2 {
             font-size: 16px;
-            width: 60%;
+            /* width: 60%; */
             color: #828b90;
           }
 
@@ -112,6 +112,11 @@
 
           #userBtn {
             right: 24px;
+          }
+
+          #spinnerOverlay {
+            position: fixed;
+            z-index: 2;
           }
 
           tbody > tr:not(.detail-view) {
@@ -493,13 +498,25 @@
               data-detail-formatter="genericDetailsFormatter"
               data-sticky-header="true">
             </table>
+
+            <p>
+              <button id="kmlFileImport" class="btn btn-action green" disabled>Importar</button>
+            </p>
           </div>
         </div>
       </section>
 
-      <script>
+      <div id="spinnerOverlay">
+        <div class="spinnerContainer">
+          <img alt="Carregando..." src="/img/spinner.svg" />
+      
+          <p id="globalSpinnerLabel"> </p>
+      
+          <progress id="globalProgressBar" value="0" max="100"></progress>
+        </div>
+      </div>
 
-        
+      <script>
         // Generic function to display in textual form all the properties of a table entry
         function genericDetailsFormatter(index, row) {
           let html = '';
@@ -986,8 +1003,6 @@
         });
 
         function extractFromCDATA(str) {
-          console.log(str);
-
           let ret;
 
           // Extract CDATA content
@@ -1002,8 +1017,6 @@
             ret = str;
           }
 
-          console.log(ret);
-
           return ret;
         }
 
@@ -1011,293 +1024,361 @@
           return str.replace(/<[^>]*>/gs, "");
         }
 
+        $('#kmlFileImport').on('click', () => {
+          if (_importedPlaces) {
+            swal({
+              title: 'Importar dados pro banco',
+              text: `Você está importando ${_importedPlaces.length} bicicletários permanentemente pro banco de dados do bike de boa. Tem certeza que deseja continuar?`,
+              // type: 'warning',
+              showCancelButton: true, 
+            }).then(() => {
+              showSpinner('Importando...', true);
+
+              $('#localsTable').bootstrapTable('destroy');
+
+              uploadImportedPlacesToBackend().then( () => {
+                hideSpinner(); 
+              });;
+            });
+            
+          }
+        });
+          
         $('#kmlFileInput').on('change', () => {
-            var file = document.getElementById("kmlFileInput").files[0];
-            if (file) {
-              var reader = new FileReader();
-              reader.readAsText(file, "UTF-8");
-              reader.onload = function (evt) {
-                const txt = evt.target.result
-                const contentContainer = document.getElementById('fileContents');
+          window._importedPlaces = [];
 
-                parser = new DOMParser();
-                window.xmlDoc = parser.parseFromString(txt, "text/xml");
+          var file = document.getElementById("kmlFileInput").files[0];
+          if (file) {
+            var reader = new FileReader();
+            reader.readAsText(file, "UTF-8");
+            reader.onload = function (evt) {
+              const txt = evt.target.result
+              const contentContainer = document.getElementById('fileContents');
 
-                console.log(xmlDoc);
+              parser = new DOMParser();
+              window.xmlDoc = parser.parseFromString(txt, "text/xml");
 
-                let data = [];
-                let tags = [...xmlDoc.getElementsByTagName("Placemark")];
-                tags.forEach(p => {
-                  let tmp = {
-                    'isCovered': null,
-                    'hasFee': null,
-                    'isPublic': null,
-                    'address': null,
-                    'structureType': null,
-                    'slots': null,
-                    'isPaid': null
-                  }; 
+              console.log(xmlDoc);
 
-                  let regex, result;
+              let data = [];
+              let tags = [...xmlDoc.getElementsByTagName("Placemark")];
+              tags.forEach(p => {
+                let tmp = {
+                  'isCovered': null,
+                  'hasFee': null,
+                  'isPublic': null,
+                  'address': null,
+                  'structureType': null,
+                  'slots': null,
+                  'isPaid': null
+                }; 
 
-                  const children = [...p.children];
-                  children.forEach(c => {
-                    switch (c.tagName) {
-                      case 'name':
-                        tmp.text = c.innerHTML;
+                let regex, result;
 
-                        if (tmp.text.toLowerCase().indexOf('bikerio') > 0) {
-                          //break;
-                          console.log('BIKERIO!!!',tmp.text);
+                const children = [...p.children];
+                children.forEach(c => {
+                  switch (c.tagName) {
+                    case 'name':
+                      tmp.text = c.innerHTML;
+
+                      if (tmp.text.toLowerCase().indexOf('bikerio') > 0) {
+                        //break;
+                        console.log('BIKERIO!!!',tmp.text);
+                      }
+
+                      // Transporte Ativo: remove special code in front of all names
+                      // Example: BC0137 - Bicicletário Lagoon
+                      //   regex capture group 1: BC0137
+                      //   regex capture group 2: Bicicletário Lagoon 
+                      regex = /^(BC[\d]*)\s\-\s(.*)/s;
+                      result = regex.exec(tmp.text);
+                      if (result && result[0] && result[1]) {
+                        tmp.taCode = result[1];
+                        tmp.text = result[2];
+                      }
+
+                      tmp.text = extractFromCDATA(tmp.text);
+                    case 'description':
+                      tmp.description = c.innerHTML;
+                      tmp.description = extractFromCDATA(tmp.description);
+                      tmp.description = removeHTML(tmp.description);
+
+                      /////////////////
+                      // Magic stuff //
+                      /////////////////
+                      const str = tmp.description.toLowerCase();
+
+                      const fusionTableShit = '![CDATA[<div class="googft-info-window" style="font-family:sans-serif">';
+                      if (tmp.description.indexOf(fusionTableShit) > 0) {
+                        tmp.description = tmp.description.split(fusionTableShit)[1];
+                      }
+
+                      // 'X vagas'
+                      regex = /(\d*)\svaga/s;
+                      result = regex.exec(str);
+                      if (result && result[1]) {
+                        tmp.slots = result[1];
+                      }
+
+                      // Coberto?
+                      if (str.indexOf('descoberto') > 0
+                        || str.indexOf('descoberta') > 0
+                        || str.indexOf('sem cobertura') > 0
+                        || str.indexOf('não coberto') > 0
+                        || str.indexOf('não coberta') > 0
+                        || str.indexOf('nao coberta') > 0
+                        || str.indexOf('nao é coberta') > 0
+                        || str.indexOf('nao e coberta') > 0
+                        || str.indexOf('não é coberto') > 0
+                        || str.indexOf('nao e coberto') > 0
+                        || str.indexOf('nao é coberto') > 0
+                        || str.indexOf('ar livre') > 0
+                        || str.indexOf('céu aberto') > 0
+                        || str.indexOf('ceu aberto') > 0) {
+                        tmp.isCovered = false;
+                      } else if (str.indexOf('coberto') > 0
+                        || str.indexOf('coberta') > 0
+                        || str.indexOf('subsolo') > 0
+                        || str.indexOf('subterrânea') > 0
+                        || str.indexOf('subterranea') > 0
+                        || str.indexOf('subterraneo') > 0
+                        || str.indexOf('subterrâneo') > 0) {
+                        tmp.isCovered = true;
+                      }
+
+                      // Gratuito?
+                      if (str.indexOf('gratuito') > 0) {
+                        tmp.isPaid = false;
+                      } else if (str.indexOf('pago') > 0 
+                        || str.indexOf('custa') > 0) {
+                        tmp.isPaid = true;
+                        tmp.isPublic = false;
+                      }
+
+                      // Público?
+                      if (str.indexOf('privado') > 0
+                        || str.indexOf('funcionários') > 0
+                        || str.indexOf('moradores') > 0
+                        || str.indexOf('sócios') > 0
+                        || str.indexOf('restrito para') > 0
+                        || str.indexOf('exclusivo para') > 0
+                        || str.indexOf('apenas para') > 0) {
+                        tmp.isPublic = false;
+                      } else if (str.indexOf('publico') > 0
+                        || str.indexOf('público') > 0
+                        || str.indexOf('na rua') > 0
+                        || str.indexOf('calçada') > 0) {
+                        tmp.isPublic = true;
+                      } 
+
+                      // Tipo de bicicletário
+                      // ['uinvertido', 'deroda', 'trave', 'suspenso', 'grade', 'other'];
+                      if (str.indexOf('u invertido') > 0
+                        || str.indexOf('suporte em u') > 0) {
+                        tmp.structureType = 'uinvertido';
+                      } else if (str.indexOf('açougue') > 0) {
+                        tmp.structureType = 'suspenso';
+                      } 
+
+                      // tmp.structureType = /^tipo\s([\w])/
+                      break;
+                    case 'styleUrl':
+                      break;
+                    case 'ExtendedData':
+                      const extData = [...c.children]; 
+                      extData.forEach(ext => {
+                        if (!ext.attributes[0] || !ext.children[0] || !ext.children[0].innerHTML) {
+                          return;
                         }
+                        
+                        const name = ext.attributes[0].nodeValue;
+                        const value = ext.children[0].innerHTML.toLowerCase();
 
-                        // Transporte Ativo: remove special code in front of all names
-                        // Example: BC0137 - Bicicletário Lagoon
-                        //   regex capture group 1: BC0137
-                        //   regex capture group 2: Bicicletário Lagoon 
-                        regex = /^(BC[\d]*)\s\-\s(.*)/s;
-                        result = regex.exec(tmp.text);
-                        if (result && result[0] && result[1]) {
-                          tmp.taCode = result[1];
-                          tmp.text = result[2];
-                        }
-
-                        tmp.text = extractFromCDATA(tmp.text);
-                      case 'description':
-                        tmp.description = c.innerHTML;
-                        tmp.description = extractFromCDATA(tmp.description);
-                        tmp.description = removeHTML(tmp.description);
-
-                        /////////////////
-                        // Magic stuff //
-                        /////////////////
-                        const str = tmp.description.toLowerCase();
-
-                        const fusionTableShit = '![CDATA[<div class="googft-info-window" style="font-family:sans-serif">';
-                        if (tmp.description.indexOf(fusionTableShit) > 0) {
-                          tmp.description = tmp.description.split(fusionTableShit)[1];
-                        }
-
-                        // 'X vagas'
-                        regex = /(\d*)\svaga/s;
-                        result = regex.exec(str);
-                        if (result && result[1]) {
-                          tmp.slots = result[1];
-                        }
-
-                        // Coberto?
-                        if (str.indexOf('descoberto') > 0
-                          || str.indexOf('descoberta') > 0
-                          || str.indexOf('sem cobertura') > 0
-                          || str.indexOf('não coberto') > 0
-                          || str.indexOf('não coberta') > 0
-                          || str.indexOf('nao coberta') > 0
-                          || str.indexOf('nao é coberta') > 0
-                          || str.indexOf('nao e coberta') > 0
-                          || str.indexOf('não é coberto') > 0
-                          || str.indexOf('nao e coberto') > 0
-                          || str.indexOf('nao é coberto') > 0
-                          || str.indexOf('ar livre') > 0
-                          || str.indexOf('céu aberto') > 0
-                          || str.indexOf('ceu aberto') > 0) {
-                          tmp.isCovered = false;
-                        } else if (str.indexOf('coberto') > 0
-                          || str.indexOf('coberta') > 0
-                          || str.indexOf('subsolo') > 0
-                          || str.indexOf('subterrânea') > 0
-                          || str.indexOf('subterranea') > 0
-                          || str.indexOf('subterraneo') > 0
-                          || str.indexOf('subterrâneo') > 0) {
-                          tmp.isCovered = true;
-                        }
- 
-                        // Gratuito?
-                        if (str.indexOf('gratuito') > 0) {
-                          tmp.isPaid = false;
-                        } else if (str.indexOf('pago') > 0 
-                          || str.indexOf('custa') > 0) {
-                          tmp.isPaid = true;
-                          tmp.isPublic = false;
-                        }
-
-                        // Público?
-                        if (str.indexOf('privado') > 0
-                          || str.indexOf('funcionários') > 0
-                          || str.indexOf('moradores') > 0
-                          || str.indexOf('sócios') > 0
-                          || str.indexOf('restrito para') > 0
-                          || str.indexOf('exclusivo para') > 0
-                          || str.indexOf('apenas para') > 0) {
-                          tmp.isPublic = false;
-                        } else if (str.indexOf('publico') > 0
-                          || str.indexOf('público') > 0
-                          || str.indexOf('na rua') > 0
-                          || str.indexOf('calçada') > 0) {
-                          tmp.isPublic = true;
-                        } 
-
-                        // Tipo de bicicletário
-                        // ['uinvertido', 'deroda', 'trave', 'suspenso', 'grade', 'other'];
-                        if (str.indexOf('u invertido') > 0
-                          || str.indexOf('suporte em u') > 0) {
-                          tmp.structureType = 'uinvertido';
-                        } else if (str.indexOf('açougue') > 0) {
-                          tmp.structureType = 'suspenso';
-                        } 
-
-                        // tmp.structureType = /^tipo\s([\w])/
-                        break;
-                      case 'styleUrl':
-                        break;
-                      case 'ExtendedData':
-                        const extData = [...c.children]; 
-                        extData.forEach(ext => {
-                          if (!ext.attributes[0] || !ext.children[0] || !ext.children[0].innerHTML) {
-                            return;
-                          }
+                        switch (name) {
+                          case 'gx_media_links':
+                            tmp.photo = value;
+                            break; 
                           
-                          const name = ext.attributes[0].nodeValue;
-                          const value = ext.children[0].innerHTML.toLowerCase();
+                          //////////////////////////////////////////////////
+                          // Transporte Ativo Fusion Maps specific field //
+                          //////////////////////////////////////////////////
+                          case 'BC_slots':
+                            tmp.slots = value;
+                            break;
+                          case 'BC_covered':
+                            if (tmp.isCovered === 'yes')   {
+                              tmp.isCovered = true;
+                            } else if (tmp.isCovered === 'no') {
+                              tmp.isCovered = false; 
+                            }
+                            break;
+                            break;
+                          case 'BC_type':
+                            // ['uinvertido', 'deroda', 'trave', 'suspenso', 'grade', 'other'];
+                            switch(value) { 
+                              case 'açougue': 
+                              case 'metrôrio':
+                                tmp.structureType = 'suspenso';
+                                break;
+                              case 'grelha':
+                              case 'holandês':
+                              case 'jujubinha':
+                              case 'de roda':  
+                              case 'trincheira':  
+                                tmp.structureType = 'deroda';
+                                break;
+                              case 'pente':
+                              case 'sulamerica':
+                              case 'pescocinho':
+                              case 'transcarioca':
+                              case 'm': 
+                                tmp.structureType = 'other';
+                                break;
+                              case 'u invertido':
+                              case 'u invertido quiosque':
+                              case 'r': 
+                                tmp.structureType = 'uinvertido';
+                                break;
+                              default:
+                                console.warn('tipo nao identificado:', value);
+                                break;
+                            }
+                            break;
+                          case 'BC_paid':
+                            tmp.isPaid = value;
+                            break;
 
-                          switch (name) {
-                            case 'gx_media_links':
-                              tmp.photo = value;
-                              break; 
-                            
-                            //////////////////////////////////////////////////
-                            // Transporte Ativo Fusion Maps specific field //
-                            //////////////////////////////////////////////////
-                            case 'BC_slots':
-                              tmp.slots = value;
-                              break;
-                            case 'BC_covered':
-                              if (tmp.isCovered === 'yes')   {
-                                tmp.isCovered = true;
-                              } else if (tmp.isCovered === 'no') {
-                                tmp.isCovered = false; 
-                              }
-                              break;
-                              break;
-                            case 'BC_type':
-                              // ['uinvertido', 'deroda', 'trave', 'suspenso', 'grade', 'other'];
-                              switch(value) { 
-                                case 'açougue': 
-                                case 'metrôrio':
-                                  tmp.structureType = 'suspenso';
-                                  break;
-                                case 'grelha':
-                                case 'holandês':
-                                case 'jujubinha':
-                                case 'de roda':  
-                                case 'trincheira':  
-                                  tmp.structureType = 'deroda';
-                                  break;
-                                case 'pente':
-                                case 'sulamerica':
-                                case 'pescocinho':
-                                case 'transcarioca':
-                                case 'm': 
-                                  tmp.structureType = 'other';
-                                  break;
-                                case 'u invertido':
-                                case 'u invertido quiosque':
-                                case 'r': 
-                                  tmp.structureType = 'uinvertido';
-                                  break;
-                                default:
-                                  console.warn('tipo nao identificado:', value);
-                                  break;
-                              }
-                              break;
-                            case 'BC_paid':
-                              tmp.isPaid = value;
-                              break;
+                          ///////////// 
+                          // Default //
+                          /////////////
+                          default:
+                            // Any other tag that we haven't identified yet
+                            tmp[name] = value;
+                        } 
+                      });
+                    case 'Point':
+                      if (c.children && c.children[0]) {
+                        // lat and lng are inverted on purporse
+                        const [lng, lat] = c.children[0].innerHTML.split(',');
+                        tmp.lat = lat;
+                        tmp.lng = lng;
+                      }
+                      break;
+                    
+                    ///////////// 
+                    // Default //
+                    /////////////
+                    default:
+                      // Any other tag that we haven't identified yet
+                      tmp[c.tagName] = c.innerHTML;
+                  }
 
-                            ///////////// 
-                            // Default //
-                            /////////////
-                            default:
-                              // Any other tag that we haven't identified yet
-                              tmp[name] = value;
-                          } 
-                        });
-                      case 'Point':
-                        if (c.children && c.children[0]) {
-                          // lat and lng are inverted on purporse
-                          const [lng, lat] = c.children[0].innerHTML.split(',');
-                          tmp.lat = lat;
-                          tmp.lng = lng;
-                        }
-                        break;
-                      
-                      ///////////// 
-                      // Default //
-                      /////////////
-                      default:
-                        // Any other tag that we haven't identified yet
-                        tmp[c.tagName] = c.innerHTML;
-                    }
-
-                  });
-
-                  data.push(tmp);
-
-                })
-
-
-                // @todo move this to global
-                let structureTypes = [];
-                for (let i = 0; i < STRUCTURE_NAMES.length; i++) {
-                  structureTypes.push({ value: STRUCTURE_CODES[i], text: STRUCTURE_NAMES[i] });
-                }
-
-                $('#importador table').bootstrapTable({
-                  columns: [
-                    { 
-                      field: 'text', title: 'Nome', sortable: true, class: 'col-title', editable: !!BDB.User.isAdmin
-                    },
-                    {
-                      field: 'address', title: 'Endereço', sortable: true, class: 'col-address', editable: !!BDB.User.isAdmin, 'editable-type': 'textarea'
-                    },
-                    {
-                      field: 'lat', title: 'lat', sortable: true, visible: false,
-                    },
-                    {
-                      field: 'lng', title: 'lng', sortable: true, visible: false,
-                    },
-                    {
-                      field: 'slots', title: 'Vagas', sortable: true, 
-                    },
-                    {
-                      field: 'isPublic', title: 'Público?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': true, 'text': 'Publico'}, {'value': false, 'text': 'Privado'} ]",
-                    },
-                    {
-                      field: 'isCovered', title: 'Coberto?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': true, 'text': 'Coberto'}, {'value': false, 'text': 'Não coberto'} ]",
-                    },
-                    {
-                      field: 'structureType', title: 'Tipo', sortable: true, editable: !!BDB.User.isAdmin
-                    },
-                    {
-                      field: 'isPaid', title: 'Pago?', sortable: true, editable: !!BDB.User.isAdmin
-                    },
-                    { 
-                      field: 'description', title: 'Descrição', sortable: true, class: 'col-description', editable: !!BDB.User.isAdmin, 'editable-type': 'textarea', visible: false
-                    },
-                    {
-                      field: 'photo', title: 'Foto', sortable: true, visible: !!BDB.User.isAdmin
-                    }
-                  ],
-                  data: data,
-                  sortName: 'text'
                 });
+
+                data.push(tmp);
+
+              })
+
+
+              // @todo move this to global
+              let structureTypes = [];
+              for (let i = 0; i < STRUCTURE_NAMES.length; i++) {
+                structureTypes.push({ value: STRUCTURE_CODES[i], text: STRUCTURE_NAMES[i] });
               }
 
-              reader.onerror = function (evt) {
-                document.getElementById("fileContents").innerHTML = "error reading file";
-              }
+              $('#importador table').bootstrapTable({
+                columns: [
+                  { 
+                    field: 'text', title: 'Nome', sortable: true, class: 'col-title', editable: !!BDB.User.isAdmin
+                  },
+                  {
+                    field: 'address', title: 'Endereço', sortable: true, class: 'col-address', editable: !!BDB.User.isAdmin, 'editable-type': 'textarea'
+                  },
+                  {
+                    field: 'lat', title: 'lat', sortable: true, visible: false,
+                  },
+                  {
+                    field: 'lng', title: 'lng', sortable: true, visible: false,
+                  },
+                  {
+                    field: 'slots', title: 'Vagas', sortable: true, 
+                  },
+                  {
+                    field: 'isPublic', title: 'Público?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': true, 'text': 'Publico'}, {'value': false, 'text': 'Privado'} ]",
+                  },
+                  {
+                    field: 'isCovered', title: 'Coberto?', sortable: true, editable: !!BDB.User.isAdmin, 'editable-type': 'select', 'editable-source': "[{'value': true, 'text': 'Coberto'}, {'value': false, 'text': 'Não coberto'} ]",
+                  },
+                  {
+                    field: 'structureType', title: 'Tipo', sortable: true, editable: !!BDB.User.isAdmin
+                  },
+                  {
+                    field: 'isPaid', title: 'Pago?', sortable: true, editable: !!BDB.User.isAdmin
+                  },
+                  { 
+                    field: 'description', title: 'Descrição', sortable: true, class: 'col-description', editable: !!BDB.User.isAdmin, 'editable-type': 'textarea', visible: false
+                  },
+                  {
+                    field: 'photo', title: 'Foto', sortable: true, visible: !!BDB.User.isAdmin
+                  }
+                ],
+                data: data,
+                sortName: 'text'
+              });
+
+              // Save data globally
+              _importedPlaces = data;
+
+              $('#kmlFileImport').attr('disabled', false);
             }
 
+            reader.onerror = function (evt) {
+              document.getElementById("fileContents").innerHTML = "error reading file";
+            }
+          }
+
+        });
+
+        function uploadImportedPlacesToBackend() {
+          return new Promise((resolve, reject) => {
+            function importRecursive(i = 0) {
+              const max = markers.length;
+  
+              if (i != markers.length) {
+                let m = markers[i]; 
+  
+                updateSpinnerProgress(i/max);
+                $('#globalSpinnerLabel').text(`${i}/${max}`);
+                
+                console.warn(`${i} of ${max}`);
+  
+                BDB.Geolocation.reverseGeocode(
+                  m.lat, m.lng,
+                  (address) => {
+                    console.debug(m.lat, m.lng, m.id);
+                    console.debug(address);
+  
+                    m.address = address;
+  
+                    // BDB.Database.customAPICall('POST', 'local', m, () => {
+                      importRecursive(i + 1);
+                    // });
+                  }, () => {
+                    // Google Maps quota limits the frequency of calls of the service
+                    setTimeout(() => {
+                      importRecursive(i);
+                    }, 2000); 
+                  }
+                );
+              } else {
+                resolve();
+              }
+            };
+  
+            BDB.Geolocation.init();
+            importRecursive();
           });
+        }
 
 
 

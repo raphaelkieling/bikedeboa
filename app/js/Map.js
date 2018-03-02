@@ -127,6 +127,11 @@ BDB.Map = (function () {
       if (!_activeFilters) {
         setMarkersIcon(mapZoomLevel); 
       }
+      // if (mapZoomLevel === 'mini') {
+      //   map.data.setStyle({visible: false}); 
+      // } else {
+      //   map.data.setStyle({visible: true});
+      // }
     }
   };
   let mapCenterChanged = function () {
@@ -283,13 +288,15 @@ BDB.Map = (function () {
       map.data.loadGeoJson('/geojson/ciclovias_fortaleza_osm.min.json'); // 41 KB
       map.data.loadGeoJson('/geojson/ciclovias_riograndedosul_osm.min.json'); // 228 KB
       map.data.loadGeoJson('/geojson/ciclovias_recife.min.json'); // 11 KB
-      // map.data.loadGeoJson('/geojson/ciclovias_riodejaneiro_osm.min.json'); // 228 KB
+      map.data.loadGeoJson('/geojson/ciclovias_riodejaneiro_osm.min.json'); // 228 KB
 
       map.data.setStyle({  
         // strokeColor: '#cde9c8', //super light green
         // strokeColor: '#00b800', // dark green
-        strokeColor: '#2cd978', // light green
-        strokeWeight: 2,
+        // strokeColor: '#2cd978', // light green
+        strokeColor: '#30bb6a', // green
+        // strokeColor: '#FF8265', //red
+        strokeWeight: 1.5,
         strokeOpacity: 1, 
         clickable: false
       });

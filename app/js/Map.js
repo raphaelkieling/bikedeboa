@@ -146,6 +146,11 @@ BDB.Map = (function () {
       if (!_activeFilters) {
         //setMarkersIcon(mapZoomLevel); 
       }
+      // if (mapZoomLevel === 'mini') {
+      //   map.data.setStyle({visible: false}); 
+      // } else {
+      //   map.data.setStyle({visible: true});
+      // }
     }
   };
   
@@ -305,12 +310,14 @@ BDB.Map = (function () {
       map.data.loadGeoJson('/geojson/ciclovias_grandeportoalegre_osm.min.json'); // 369 KB
       // map.data.loadGeoJson('/geojson/ciclovias_riograndedosul_osm.min.json'); // 654 KB
       // map.data.loadGeoJson('/geojson/ciclovias_riodejaneiro_osm.min.json'); // 374 KB
-
+ 
       map.data.setStyle({  
         // strokeColor: '#cde9c8', //super light green
         // strokeColor: '#00b800', // dark green
-        strokeColor: '#2cd978', // light green
-        strokeWeight: 2,
+        // strokeColor: '#2cd978', // light green
+        strokeColor: '#30bb6a', // green
+        // strokeColor: '#FF8265', //red
+        strokeWeight: 1.5,
         strokeOpacity: 1, 
         clickable: false
       });
